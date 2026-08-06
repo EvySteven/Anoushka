@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -5,26 +7,24 @@ from pydantic import BaseModel
 import requests
 import chromadb
 import json
-import os
-from dotenv import load_dotenv
 
-# 1. Charger les variables du fichier .env
+# 1. Charger les variables d'environnement (.env en local ou variables Render en Cloud)
 load_dotenv()
 
-# 2. Récupérer la clé d'API et le mot de passe admin
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# 2. Récupérer la clé API Groq et le mot de passe Admin
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("OPENROUTER_API_KEY")
 ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "ne2026admin")
 
-# Vérification de sécurité
-if not OPENROUTER_API_KEY:
-    print("⚠️ ATTENTION : La variable OPENROUTER_API_KEY n'est pas trouvée dans le fichier .env !")
+if not GROQ_API_KEY:
+    print("⚠️ ATTENTION : La variable GROQ_API_KEY n'est pas trouvée dans le fichier .env ou Render !")
 
-app = FastAPI(title="Backend Né IA - Render Cloud")
+app = FastAPI(title="Backend Né IA - Groq Cloud")
 
-# Montage des fichiers statiques (HTML / CSS / JS)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Montage du dossier statique pour le CSS / JS / HTML
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Base de données RAG ChromaDB
+# 3. Base de données RAG ChromaDB
 chroma_client = chromadb.PersistentClient(path="./knowledge_db")
 collection = chroma_client.get_or_create_collection(name="sante_femmes")
 
@@ -33,7 +33,7 @@ if not os.path.exists(PENDING_FILE):
     with open(PENDING_FILE, "w", encoding="utf-8") as f:
         json.dump([], f)
 
-# Modèles Pydantic
+# Modèles de données Pydantic
 class QuestionRequest(BaseModel):
     message: str
 
@@ -56,18 +56,22 @@ class AjoutDirectRequest(BaseModel):
 # ------------------------------------------------------------------
 @app.get("/")
 def page_publique():
-    return FileResponse("static/index.html")
+    if os.path.exists("static/index.html"):
+        return FileResponse("static/index.html")
+    return {"status": "API Né IA fonctionnelle", "docs": "/docs"}
 
 @app.get("/admin")
 def page_admin():
-    return FileResponse("static/admin.html")
+    if os.path.exists("static/admin.html"):
+        return FileResponse("static/admin.html")
+    return {"status": "Espace Admin - fichier static/admin.html introuvable"}
 
 # ------------------------------------------------------------------
-# ENDPOINT CHAT (OPENROUTER QWEN 2.5)
+# ENDPOINT CHAT (GROQ API - LLAMA 3.3 70B ULTRA RAPIDE)
 # ------------------------------------------------------------------
 @app.post("/api/chat")
 def chat(req: QuestionRequest):
-    # 1. Recherche dans la mémoire RAG ChromaDB
+    # 1. Recherche RAG dans la mémoire ChromaDB
     results = collection.query(query_texts=[req.message], n_results=2)
     documents = results.get("documents", [[]])[0]
     contexte_trouve = "\n---\n".join(documents) if documents else "Aucun document spécifique trouvé."
@@ -79,14 +83,14 @@ def chat(req: QuestionRequest):
         "Réponds à l'utilisatrice avec empathie, clarté et concision."
     )
 
-    # 2. Appel à l'API gratuite d'OpenRouter (Modèle Qwen 2.5 72B)
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    # 2. Appel à l'API Groq
+    url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "qwen/qwen-2.5-72b-instruct:free",
+        "model": "llama-3.3-70b-versatile",  # Modèle gratuit ultra-rapide sur Groq
         "messages": [
             {"role": "system", "content": prompt_systeme},
             {"role": "user", "content": req.message}
@@ -97,22 +101,27 @@ def chat(req: QuestionRequest):
         response = requests.post(url, headers=headers, json=payload)
         res_data = response.json()
         
+        print("=== REPONSE GROQ API ===", res_data)
+
         if 'choices' in res_data and len(res_data['choices']) > 0:
             reponse_texte = res_data['choices'][0]['message']['content']
+        elif 'error' in res_data:
+            reponse_texte = f"Erreur Groq API: {res_data['error'].get('message', 'Clé API invalide ou quota dépassé.')}"
         else:
             reponse_texte = "Désolé, l'IA est momentanément indisponible."
 
         return {"reponse": reponse_texte, "source": contexte_trouve}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur API Qwen OpenRouter: {str(e)}")
+        print("Erreur exception Groq:", str(e))
+        raise HTTPException(status_code=500, detail=f"Erreur API Groq: {str(e)}")
 
-# Alias pour éviter les erreurs 404
+# Alias de compatibilité pour la route /chat
 @app.post("/chat")
 def chat_alias(req: QuestionRequest):
     return chat(req)
 
 # ------------------------------------------------------------------
-# AUTRES ENDPOINTS API
+# ENDPOINT PROPOSITION COMMUNAUTAIRE
 # ------------------------------------------------------------------
 @app.post("/api/proposer")
 def proposer(prop: PropositionRequest):
@@ -123,6 +132,9 @@ def proposer(prop: PropositionRequest):
         json.dump(props, f, ensure_ascii=False, indent=2)
     return {"message": "Proposition enregistrée."}
 
+# ------------------------------------------------------------------
+# ENDPOINTS ADMIN (MODÉRATION & RAG)
+# ------------------------------------------------------------------
 @app.get("/api/admin/attente")
 def voir_attente(key: str = Query(...)):
     if key != ADMIN_SECRET_KEY:
