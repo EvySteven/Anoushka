@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anoushka - Né IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="h-screen flex flex-col max-w-4xl mx-auto p-4">
+
+    <!-- HEADER -->
+    <header class="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm mb-4 border border-purple-100">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 bg-primaire rounded-full flex items-center justify-center text-white font-bold text-xl">
+                🌸
+            </div>
+            <div>
+                <h1 class="text-xl font-bold">Anoushka</h1>
+                <p class="text-xs text-gray-500">Assistante santé féminine • Né App</p>
+            </div>
+        </div>
+        <button onclick="ouvrirModalProposer()" class="text-xs bg-purple-100 text-purple-700 px-3 py-2 rounded-xl hover:bg-purple-200 transition font-semibold">
+            💡 Partager un savoir
+        </button>
+    </header>
+
+    <!-- ZONE DE DISCUSSION -->
+    <div id="chat-box" class="flex-1 overflow-y-auto bg-white p-4 rounded-2xl shadow-sm border border-purple-100 space-y-4 mb-4">
+        <div class="flex items-start space-x-3">
+            <div class="w-8 h-8 bg-primaire text-white rounded-full flex items-center justify-center text-sm font-bold">A</div>
+            <div class="bg-bulle-ia p-3 rounded-2xl rounded-tl-none max-w-md text-sm">
+                Bonjour ! Je suis <b>Anoushka</b>. Pose-moi tes questions sur le cycle menstruel, la fertilité ou la santé féminine. 🌸
+            </div>
+        </div>
+    </div>
+
+    <!-- ZONE DE SAISIE -->
+    <div class="bg-white p-2 rounded-2xl shadow-sm border border-purple-100 flex items-center space-x-2">
+        <input id="user-input" type="text" placeholder="Pose ta question à Anoushka..." class="flex-1 p-3 outline-none text-sm bg-transparent" onkeydown="if(event.key==='Enter') envoyerMessage()">
+        <button onclick="envoyerMessage()" class="bg-primaire text-white p-3 rounded-xl transition">
+            <i class="fas fa-paper-plane"></i>
+        </button>
+    </div>
+
+    <!-- MODAL PROPOSER SAVOIR -->
+    <div id="modal-proposer" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white p-6 rounded-2xl max-w-md w-full space-y-4 shadow-xl">
+            <h3 class="font-bold text-lg">💡 Partager un savoir ou conseil local</h3>
+            <p class="text-xs text-gray-500">Ton conseil sera examiné par notre équipe avant d'être enseigné à l'IA.</p>
+            <input id="prop-titre" type="text" placeholder="Titre (ex: Astuce pour règles douloureuses)" class="w-full p-2 border rounded-xl text-sm outline-none">
+            <textarea id="prop-contenu" rows="3" placeholder="Explications détaillées..." class="w-full p-2 border rounded-xl text-sm outline-none"></textarea>
+            <input id="prop-auteur" type="text" placeholder="Ton prénom (optionnel)" class="w-full p-2 border rounded-xl text-sm outline-none">
+            <div class="flex justify-end space-x-2">
+                <button onclick="fermerModalProposer()" class="px-4 py-2 text-sm text-gray-500">Annuler</button>
+                <button onclick="envoyerProposition()" class="px-4 py-2 text-sm bg-primaire text-white rounded-xl">Envoyer</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function envoyerMessage() {
+            const input = document.getElementById('user-input');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            const chatBox = document.getElementById('chat-box');
+            chatBox.innerHTML += `
+                <div class="flex items-start justify-end space-x-3">
+                    <div class="bg-primaire text-white p-3 rounded-2xl rounded-tr-none max-w-md text-sm">${msg}</div>
+                </div>
+            `;
+            input.value = '';
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            const loadingId = 'loading-' + Date.now();
+            chatBox.innerHTML += `
+                <div id="${loadingId}" class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-primaire text-white rounded-full flex items-center justify-center text-sm font-bold">A</div>
+                    <div class="bg-bulle-ia p-3 rounded-2xl rounded-tl-none text-sm text-gray-400 italic">Anoushka réfléchit...</div>
+                </div>
+            `;
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg})
+                });
+                const data = await res.json();
+                document.getElementById(loadingId).remove();
+
+                chatBox.innerHTML += `
+                    <div class="flex items-start space-x-3">
+                        <div class="w-8 h-8 bg-primaire text-white rounded-full flex items-center justify-center text-sm font-bold">A</div>
+                        <div class="bg-bulle-ia p-3 rounded-2xl rounded-tl-none max-w-md text-sm space-y-2">
+                            <div>${data.reponse}</div>
+                            ${data.source && data.source !== "Aucun document spécifique trouvé." ? `<div class="text-[10px] text-purple-600 bg-purple-100 p-1 rounded"><b>Source vérifiée :</b> ${data.source}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            } catch(e) {
+                document.getElementById(loadingId).remove();
+                chatBox.innerHTML += `<div class="text-red-500 text-xs">Erreur de connexion.</div>`;
+            }
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function ouvrirModalProposer() { document.getElementById('modal-proposer').classList.remove('hidden'); }
+        function fermerModalProposer() { document.getElementById('modal-proposer').classList.add('hidden'); }
+
+        async function envoyerProposition() {
+            const titre = document.getElementById('prop-titre').value;
+            const contenu = document.getElementById('prop-contenu').value;
+            const auteur = document.getElementById('prop-auteur').value;
+            if(!titre || !contenu) return alert("Veuillez remplir le titre et le contenu");
+
+            await fetch('/api/proposer', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({titre, contenu, auteur})
+            });
+            alert("Merci ! Votre proposition sera examinée par notre équipe.");
+            fermerModalProposer();
+        }
+    </script>
+</body>
+</html>

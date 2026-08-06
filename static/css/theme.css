@@ -1,0 +1,25 @@
+/* ==========================================================================
+   PALETTE DE COULEURS DE L'APPLICATION NÉ
+   ========================================================================== */
+:root {
+  --color-primaire: #A78BFA;      /* Violet doux */
+  --color-primaire-hover: #9061F9;/* Violet plus sombre au survol */
+  --color-secondaire: #F9A8D4;    /* Rose poudré */
+  --color-fond: #FFF9FB;          /* Blanc cassé */
+  --color-texte: #1F1F2E;         /* Gris foncé */
+  --color-bulle-ia: #F3E8FF;      /* Violet très clair */
+  --color-vert: #4ADE80;          /* Vert fertile */
+  --color-rouge: #F87171;         /* Rouge règles */
+}
+
+body {
+  background-color: var(--color-fond);
+  color: var(--color-texte);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.bg-primaire { background-color: var(--color-primaire); }
+.bg-primaire:hover { background-color: var(--color-primaire-hover); }
+.text-primaire { color: var(--color-primaire); }
+.border-primaire { border-color: var(--color-primaire); }
+.bg-bulle-ia { background-color: var(--color-bulle-ia); }

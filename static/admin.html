@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Admin - Né IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen p-6">
+
+    <div class="max-w-5xl mx-auto space-y-6">
+
+        <!-- HEADER ADMIN -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm flex justify-between items-center border border-purple-100">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">👑 Dashboard Admin — Né IA</h1>
+                <p class="text-xs text-gray-500">Gestion de la mémoire RAG & Modération</p>
+            </div>
+            <div class="flex items-center space-x-2">
+                <input id="admin-key" type="password" placeholder="Mot de passe admin" class="p-2 border rounded-xl text-sm outline-none">
+                <button onclick="connexion()" class="bg-primaire text-white px-4 py-2 rounded-xl text-sm font-semibold">Connexion</button>
+            </div>
+        </div>
+
+        <!-- CONTENU DU DASHBOARD (Masqué tant que non connecté) -->
+        <div id="dashboard-content" class="hidden space-y-6">
+
+            <!-- STATISTIQUES CARDS -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-purple-100 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-gray-500">Propositions en attente</p>
+                        <h2 id="stat-attente" class="text-3xl font-bold text-orange-500">0</h2>
+                    </div>
+                    <i class="fas fa-clock text-3xl text-orange-200"></i>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-purple-100 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-gray-500">Connaissances enregistrées dans l'IA</p>
+                        <h2 id="stat-total" class="text-3xl font-bold text-purple-600">0</h2>
+                    </div>
+                    <i class="fas fa-brain text-3xl text-purple-200"></i>
+                </div>
+            </div>
+
+            <!-- ONGLETS -->
+            <div class="flex space-x-2 border-b border-gray-200">
+                <button onclick="afficherOnglet('attente')" id="tab-attente" class="py-2 px-4 font-semibold text-sm border-b-2 border-primaire text-primaire">📥 Propositions en attente</button>
+                <button onclick="afficherOnglet('base')" id="tab-base" class="py-2 px-4 font-semibold text-sm text-gray-500">📚 Base de connaissances RAG</button>
+                <button onclick="afficherOnglet('ajouter')" id="tab-ajouter" class="py-2 px-4 font-semibold text-sm text-gray-500">➕ Ajout Direct Admin</button>
+            </div>
+
+            <!-- SECTION 1 : PROPOSITIONS EN ATTENTE -->
+            <div id="section-attente" class="bg-white p-6 rounded-2xl shadow-sm border border-purple-100 space-y-4">
+                <h3 class="font-bold text-lg">Modération des propositions de la communauté</h3>
+                <div id="liste-propositions" class="space-y-3"></div>
+            </div>
+
+            <!-- SECTION 2 : BASE DE CONNAISSANCES RAG -->
+            <div id="section-base" class="hidden bg-white p-6 rounded-2xl shadow-sm border border-purple-100 space-y-4">
+                <h3 class="font-bold text-lg">Tout ce que l'IA sait actuellement</h3>
+                <div id="liste-connaissances" class="space-y-3"></div>
+            </div>
+
+            <!-- SECTION 3 : AJOUT DIRECT ADMIN -->
+            <div id="section-ajouter" class="hidden bg-white p-6 rounded-2xl shadow-sm border border-purple-100 space-y-4">
+                <h3 class="font-bold text-lg">Ajouter une fiche médicale ou un cours à l'IA</h3>
+                <input id="ajout-titre" type="text" placeholder="Titre du cours / sujet" class="w-full p-3 border rounded-xl text-sm outline-none">
+                <textarea id="ajout-contenu" rows="5" placeholder="Contenu médical ou conseil officiel..." class="w-full p-3 border rounded-xl text-sm outline-none"></textarea>
+                <button onclick="ajouterDirect()" class="bg-primaire text-white px-6 py-3 rounded-xl font-semibold text-sm">Enseigner immédiatement à l'IA</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        let currentKey = "";
+
+        function connexion() {
+            currentKey = document.getElementById('admin-key').value;
+            if(!currentKey) return alert("Saisir le mot de passe");
+            document.getElementById('dashboard-content').classList.remove('hidden');
+            chargerDonnees();
+        }
+
+        function afficherOnglet(nom) {
+            ['attente', 'base', 'ajouter'].forEach(t => {
+                document.getElementById('section-' + t).classList.add('hidden');
+                document.getElementById('tab-' + t).className = "py-2 px-4 font-semibold text-sm text-gray-500";
+            });
+            document.getElementById('section-' + nom).classList.remove('hidden');
+            document.getElementById('tab-' + nom).className = "py-2 px-4 font-semibold text-sm border-b-2 border-primaire text-primaire";
+        }
+
+        async function chargerDonnees() {
+            // 1. Charger attente
+            const resAtt = await fetch('/api/admin/attente?key=' + encodeURIComponent(currentKey));
+            if(resAtt.status === 401) return alert("Mot de passe invalide !");
+            const atts = await resAtt.json();
+            document.getElementById('stat-attente').innerText = atts.length;
+
+            const divAtt = document.getElementById('liste-propositions');
+            if(atts.length === 0) divAtt.innerHTML = "<p class='text-sm text-gray-400'>Aucune proposition en attente.</p>";
+            else divAtt.innerHTML = atts.map((item, idx) => `
+                <div class="border p-4 rounded-xl bg-gray-50 flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-sm">${item.titre}</div>
+                        <div class="text-xs text-gray-600">${item.contenu}</div>
+                        <div class="text-[10px] text-gray-400">Auteur : ${item.auteur}</div>
+                    </div>
+                    <div class="space-x-2">
+                        <button onclick="valider(${idx})" class="bg-green-600 text-white text-xs px-3 py-2 rounded-xl font-bold">Approuver</button>
+                        <button onclick="rejeter(${idx})" class="bg-red-500 text-white text-xs px-3 py-2 rounded-xl font-bold">Rejeter</button>
+                    </div>
+                </div>
+            `).join('');
+
+            // 2. Charger connaissances
+            const resBase = await fetch('/api/admin/connaissances?key=' + encodeURIComponent(currentKey));
+            const base = await resBase.json();
+            document.getElementById('stat-total').innerText = base.length;
+
+            const divBase = document.getElementById('liste-connaissances');
+            if(base.length === 0) divBase.innerHTML = "<p class='text-sm text-gray-400'>La mémoire RAG est vide.</p>";
+            else divBase.innerHTML = base.map((item) => `
+                <div class="border p-4 rounded-xl bg-purple-50/40 flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-sm text-purple-900">${item.titre}</div>
+                        <div class="text-xs text-gray-700">${item.contenu}</div>
+                    </div>
+                    <button onclick="supprimerDoc('${item.id}')" class="bg-red-100 text-red-600 text-xs px-3 py-2 rounded-xl font-bold hover:bg-red-200">Supprimer</button>
+                </div>
+            `).join('');
+        }
+
+        async function valider(idx) {
+            await fetch('/api/admin/valider', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({index: idx, secret_key: currentKey})
+            });
+            chargerDonnees();
+        }
+
+        async function rejeter(idx) {
+            await fetch('/api/admin/rejeter?index=' + idx + '&key=' + encodeURIComponent(currentKey), { method: 'DELETE' });
+            chargerDonnees();
+        }
+
+        async function ajouterDirect() {
+            const titre = document.getElementById('ajout-titre').value;
+            const contenu = document.getElementById('ajout-contenu').value;
+            if(!titre || !contenu) return alert("Remplir tous les champs");
+
+            await fetch('/api/admin/ajouter-direct', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({titre, contenu, secret_key: currentKey})
+            });
+            alert("Enseigné à l'IA avec succès !");
+            document.getElementById('ajout-titre').value = '';
+            document.getElementById('ajout-contenu').value = '';
+            chargerDonnees();
+        }
+
+        async function supprimerDoc(docId) {
+            if(!confirm("Voulez-vous effacer cette connaissance de l'IA ?")) return;
+            await fetch('/api/admin/supprimer-connaissance?doc_id=' + docId + '&key=' + encodeURIComponent(currentKey), { method: 'DELETE' });
+            chargerDonnees();
+        }
+    </script>
+</body>
+</html>

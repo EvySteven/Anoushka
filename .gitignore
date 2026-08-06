@@ -1,0 +1,12 @@
+Manuel.md
+
+# Ne JAMAIS envoyer les secrets
+.env
+
+# Ne pas envoyer le cache Python
+__pycache__/
+*.pyc
+
+# Ne pas envoyer la base locale temporaire
+knowledge_db/
+propositions_en_attente.json
