@@ -69,51 +69,61 @@ def page_admin():
 # ------------------------------------------------------------------
 # ENDPOINT CHAT (GROQ API - LLAMA 3.3 70B ULTRA RAPIDE)
 # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# ENDPOINT CHAT (OPTIMISÉ POUR VITESSE ÉCLAIR ⚡)
+# ------------------------------------------------------------------
 @app.post("/api/chat")
 def chat(req: QuestionRequest):
-    # 1. Recherche RAG dans la mémoire ChromaDB
-    results = collection.query(query_texts=[req.message], n_results=2)
-    documents = results.get("documents", [[]])[0]
-    contexte_trouve = "\n---\n".join(documents) if documents else "Aucun document spécifique trouvé."
+    contexte_trouve = "Aucun document spécifique trouvé."
+
+    # 1. Optimisation RAG : Ne fait la recherche que si la base contient des fiches
+    try:
+        if collection.count() > 0:
+            results = collection.query(query_texts=[req.message], n_results=2)
+            documents = results.get("documents", [[]])[0]
+            if documents:
+                contexte_trouve = "\n---\n".join(documents)
+    except Exception as e:
+        print("Avertissement ChromaDB:", e)
 
     prompt_systeme = (
         "Tu es Anoushka, l'assistante santé féminine bienveillante intégrée à l'application Né. "
         "Voici les connaissances médicales vérifiées de notre base :\n"
         f"{contexte_trouve}\n\n"
-        "Réponds à l'utilisatrice avec empathie, clarté et concision."
+        "Réponds à l'utilisatrice avec empathie, clarté et concision (maximum 3 à 4 phrases)."
     )
 
-    # 2. Appel à l'API Groq
+    # 2. Appel à Groq avec le modèle Ultra-Fast llama-3.1-8b-instant
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "llama-3.3-70b-versatile",  # Modèle gratuit ultra-rapide sur Groq
+        "model": "llama-3.1-8b-instant",  # Modèle Vitesse Éclair
         "messages": [
             {"role": "system", "content": prompt_systeme},
             {"role": "user", "content": req.message}
-        ]
+        ],
+        "max_tokens": 400, # Limite la longueur pour des réponses instantanées
+        "temperature": 0.7
     }
 
     try:
         response = requests.post(url, headers=headers, json=payload)
         res_data = response.json()
-        
-        print("=== REPONSE GROQ API ===", res_data)
 
         if 'choices' in res_data and len(res_data['choices']) > 0:
             reponse_texte = res_data['choices'][0]['message']['content']
         elif 'error' in res_data:
-            reponse_texte = f"Erreur Groq API: {res_data['error'].get('message', 'Clé API invalide ou quota dépassé.')}"
+            reponse_texte = f"Erreur Groq: {res_data['error'].get('message', 'Problème de clé API.')}"
         else:
             reponse_texte = "Désolé, l'IA est momentanément indisponible."
 
         return {"reponse": reponse_texte, "source": contexte_trouve}
     except Exception as e:
-        print("Erreur exception Groq:", str(e))
         raise HTTPException(status_code=500, detail=f"Erreur API Groq: {str(e)}")
+
 
 # Alias de compatibilité pour la route /chat
 @app.post("/chat")
