@@ -8,23 +8,18 @@ import requests
 import chromadb
 import json
 
-# 1. Charger les variables d'environnement (.env en local ou variables Render en Cloud)
+# 1. Charger les variables d'environnement
 load_dotenv()
 
-# 2. Récupérer la clé API Groq et le mot de passe Admin
 GROQ_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("OPENROUTER_API_KEY")
 ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "ne2026admin")
 
-if not GROQ_API_KEY:
-    print("⚠️ ATTENTION : La variable GROQ_API_KEY n'est pas trouvée dans le fichier .env ou Render !")
+app = FastAPI(title="Backend Né IA - Mémoire & Conversation")
 
-app = FastAPI(title="Backend Né IA - Groq Cloud")
-
-# Montage du dossier statique pour le CSS / JS / HTML
 if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 3. Base de données RAG ChromaDB
+# 2. Base RAG ChromaDB
 chroma_client = chromadb.PersistentClient(path="./knowledge_db")
 collection = chroma_client.get_or_create_collection(name="sante_femmes")
 
@@ -33,9 +28,15 @@ if not os.path.exists(PENDING_FILE):
     with open(PENDING_FILE, "w", encoding="utf-8") as f:
         json.dump([], f)
 
-# Modèles de données Pydantic
+# 🧠 MÉMOIRE DES CONVERSATIONS EN MÉMOIRE SERVEUR
+# Format : { "session_id": [ {"role": "user/assistant", "content": "..."}, ... ] }
+SESSIONS = {}
+
+# Modèles Pydantic
 class QuestionRequest(BaseModel):
     message: str
+    session_id: str = "default_session" # ID unique de l'utilisatrice
+    prenom: str = None                 # Prénom optionnel
 
 class PropositionRequest(BaseModel):
     titre: str
@@ -67,16 +68,18 @@ def page_admin():
     return {"status": "Espace Admin - fichier static/admin.html introuvable"}
 
 # ------------------------------------------------------------------
-# ENDPOINT CHAT (GROQ API - LLAMA 3.3 70B ULTRA RAPIDE)
-# ------------------------------------------------------------------
-# ------------------------------------------------------------------
-# ENDPOINT CHAT (OPTIMISÉ POUR VITESSE ÉCLAIR ⚡)
+# ENDPOINT CHAT AVEC MÉMOIRE & PERSONNALITÉ
 # ------------------------------------------------------------------
 @app.post("/api/chat")
 def chat(req: QuestionRequest):
-    contexte_trouve = "Aucun document spécifique trouvé."
+    session_id = req.session_id
 
-    # 1. Optimisation RAG : Ne fait la recherche que si la base contient des fiches
+    # 1. Initialiser la mémoire de la session si elle n'existe pas encore
+    if session_id not in SESSIONS:
+        SESSIONS[session_id] = []
+
+    # 2. Recherche RAG dans ChromaDB pour le contexte médical
+    contexte_trouve = "Aucun document spécifique trouvé."
     try:
         if collection.count() > 0:
             results = collection.query(query_texts=[req.message], n_results=2)
@@ -86,27 +89,56 @@ def chat(req: QuestionRequest):
     except Exception as e:
         print("Avertissement ChromaDB:", e)
 
-    prompt_systeme = (
-        "Tu es Anoushka, l'assistante santé féminine bienveillante intégrée à l'application Né. "
-        "Tu donneras juste ton nom à la premiere conversation, puis tu répondras aux questions de l'utilisatrice en utilisant les connaissances médicales vérifiées de notre base. "
-        "Voici les connaissances médicales vérifiées de notre base :\n"
-        f"{contexte_trouve}\n\n"
-        "Réponds à l'utilisatrice avec empathie, clarté et concision (maximum 3 à 4 phrases)."
-    )
+    # 3. Prompt de personnalité chaleureuse et amicale
+    prenom_str = f"L'utilisatrice s'appelle {req.prenom}. " if req.prenom else ""
 
-    # 2. Appel à Groq avec le modèle Ultra-Fast llama-3.1-8b-instant
+    prompt_systeme = f"""Tu es Anoushka, une compagne et assistante amicale, chaleureuse et bienveillante intégrée à l'application Né. {prenom_str}
+Tu réponds principalement sur la santé sexuelle et reproductive, mais tu peux aussi discuter de TOUT avec plaisir (vie quotidienne, météo, conseils, culture, voyages).
+
+GESTION DES LANGUES :
+- Par défaut, réponds en français fluide, naturel et impeccablement correct (sans aucune faute de grammaire).
+- Tu es polyglotte : si l'utilisatrice s'adresse à toi ou te demande de répondre dans une langue internationale (Anglais, Espagnol, Chinois/Mandarin, Arabe, Allemand, Portugais, etc.), adapte-toi immédiatement et réponds couramment dans la langue demandée.
+
+ADAPTATION AU JARGON ET STYLE DE L'UTILISATRICE :
+- Adapte-toi naturellement au jargon, au niveau de langage et aux expressions de l'utilisatrice (effet miroir).
+- Si elle utilise du jargon jeune, des expressions locales décontractées ou familiales, réponds-lui avec la même proximité et complicité, sans jamais perdre en clarté ni en correction de grammaire.
+- Si elle utilise un langage plus formel ou technique, adapte-toi avec le même niveau de précision.
+
+TON ET STYLE DE CONVERSATION :
+- Sois chaleureuse, amicale, pétillante et parfois drôle pour les discussions quotidiennes. Tu peux utiliser des émojis 😊 pour rendre l'échange chaleureux !
+- Reste douce, empathique et sérieuse si l'utilisatrice te parle d'un problème de santé triste ou douloureux.
+- Tutoie l'utilisatrice de façon amicale (ou vouvoie si elle le demande).
+
+RÈGLES D'OR DE TON COMPORTEMENT :
+1. NE TE PRÉSENTE PAS à chaque message. Ne dis PAS 'Bonjour, je suis Anoushka...' à chaque réponse ! Réponds directement et naturellement.
+2. Tu donneras ton nom uniquement lors de la toute première prise de contact si nécessaire.
+3. Si l'utilisatrice te donne son prénom ou te demande si tu t'en souviens, retiens-le et utilise-le chaleureusement.
+4. Quand une question porte sur la santé, appuie-toi sur ces données vérifiées si utile :
+{contexte_trouve}
+5. Reste concise, empathique et naturelle (2 à 4 phrases sauf si une longue explication est demandée).
+6. Ne donne JAMAIS de conseils médicaux précis ou de prescriptions, et n'invente jamais de faits médicaux. Encourage toujours à consulter un professionnel de santé.
+7. Si tu ne sais pas une information, dis-le honnêtement et propose de reformuler ou de chercher.
+"""
+    # 4. Reconstruire l'historique complet pour Groq
+    messages_payload = [{"role": "system", "content": prompt_systeme}]
+    
+    # Ajouter les anciens messages de la conversation (max 10 derniers échanges)
+    historique_recent = SESSIONS[session_id][-10:]
+    messages_payload.extend(historique_recent)
+    
+    # Ajouter le nouveau message de l'utilisatrice
+    messages_payload.append({"role": "user", "content": req.message})
+
+    # 5. Appel Groq API (Ultra-rapide)
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "llama-3.1-8b-instant",  # Modèle Vitesse Éclair
-        "messages": [
-            {"role": "system", "content": prompt_systeme},
-            {"role": "user", "content": req.message}
-        ],
-        "max_tokens": 400, # Limite la longueur pour des réponses instantanées
+        "model": "llama-3.1-8b-instant",
+        "messages": messages_payload,
+        "max_tokens": 400,
         "temperature": 0.7
     }
 
@@ -116,8 +148,12 @@ def chat(req: QuestionRequest):
 
         if 'choices' in res_data and len(res_data['choices']) > 0:
             reponse_texte = res_data['choices'][0]['message']['content']
+            
+            # 🧠 SAUVEGARDER DANS LA MÉMOIRE DE LA SESSION
+            SESSIONS[session_id].append({"role": "user", "content": req.message})
+            SESSIONS[session_id].append({"role": "assistant", "content": reponse_texte})
         elif 'error' in res_data:
-            reponse_texte = f"Erreur Groq: {res_data['error'].get('message', 'Problème de clé API.')}"
+            reponse_texte = f"Erreur Groq: {res_data['error'].get('message', 'Clé API invalide.')}"
         else:
             reponse_texte = "Désolé, l'IA est momentanément indisponible."
 
@@ -125,14 +161,13 @@ def chat(req: QuestionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur API Groq: {str(e)}")
 
-
-# Alias de compatibilité pour la route /chat
+# Alias de route
 @app.post("/chat")
 def chat_alias(req: QuestionRequest):
     return chat(req)
 
 # ------------------------------------------------------------------
-# ENDPOINT PROPOSITION COMMUNAUTAIRE
+# AUTRES ENDPOINTS API (MODÉRATION & ADMIN)
 # ------------------------------------------------------------------
 @app.post("/api/proposer")
 def proposer(prop: PropositionRequest):
@@ -143,9 +178,6 @@ def proposer(prop: PropositionRequest):
         json.dump(props, f, ensure_ascii=False, indent=2)
     return {"message": "Proposition enregistrée."}
 
-# ------------------------------------------------------------------
-# ENDPOINTS ADMIN (MODÉRATION & RAG)
-# ------------------------------------------------------------------
 @app.get("/api/admin/attente")
 def voir_attente(key: str = Query(...)):
     if key != ADMIN_SECRET_KEY:

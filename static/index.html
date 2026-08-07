@@ -59,71 +59,81 @@
         </div>
     </div>
 
-    <script>
-        async function envoyerMessage() {
-            const input = document.getElementById('user-input');
-            const msg = input.value.trim();
-            if (!msg) return;
+<script>
+    // Générer un identifiant unique de session pour se souvenir de la conversation
+    let sessionId = localStorage.getItem('ne_session_id');
+    if (!sessionId) {
+        sessionId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('ne_session_id', sessionId);
+    }
 
-            const chatBox = document.getElementById('chat-box');
-            chatBox.innerHTML += `
-                <div class="flex items-start justify-end space-x-3">
-                    <div class="bg-primaire text-white p-3 rounded-2xl rounded-tr-none max-w-md text-sm">${msg}</div>
-                </div>
-            `;
-            input.value = '';
-            chatBox.scrollTop = chatBox.scrollHeight;
+    async function envoyerMessage() {
+        const input = document.getElementById('user-input');
+        const msg = input.value.trim();
+        if (!msg) return;
 
-            const loadingId = 'loading-' + Date.now();
-            chatBox.innerHTML += `
-                <div id="${loadingId}" class="flex items-start space-x-3">
-                    <div class="w-8 h-8 bg-primaire text-white rounded-full flex items-center justify-center text-sm font-bold">A</div>
-                    <div class="bg-bulle-ia p-3 rounded-2xl rounded-tl-none text-sm text-gray-400 italic">Anoushka réfléchit...</div>
-                </div>
-            `;
+        const chatBox = document.getElementById('chat-box');
+        chatBox.innerHTML += `
+            <div class="flex items-start justify-end space-x-3">
+                <div class="bg-primaire text-white p-3 rounded-2xl rounded-tr-none max-w-md text-sm">${msg}</div>
+            </div>
+        `;
+        input.value = '';
+        chatBox.scrollTop = chatBox.scrollHeight;
 
-            try {
-                const res = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: msg})
-                });
-                const data = await res.json();
-                document.getElementById(loadingId).remove();
+        const loadingId = 'loading-' + Date.now();
+        chatBox.innerHTML += `
+            <div id="${loadingId}" class="flex items-start space-x-3">
+                <div class="w-8 h-8 bg-primaire text-white rounded-full flex items-center justify-center text-sm font-bold">A</div>
+                <div class="bg-bulle-ia p-3 rounded-2xl rounded-tl-none text-sm text-gray-400 italic">Anoushka réfléchit...</div>
+            </div>
+        `;
 
-                chatBox.innerHTML += `
-                    <div class="flex items-start space-x-3">
-                        <div class="w-8 h-8 bg-primaire text-white rounded-full flex items-center justify-center text-sm font-bold">A</div>
-                        <div class="bg-bulle-ia p-3 rounded-2xl rounded-tl-none max-w-md text-sm space-y-2">
-                            <div>${data.reponse}</div>
-                            ${data.source && data.source !== "Aucun document spécifique trouvé." ? `<div class="text-[10px] text-purple-600 bg-purple-100 p-1 rounded"><b>Source vérifiée :</b> ${data.source}</div>` : ''}
-                        </div>
-                    </div>
-                `;
-            } catch(e) {
-                document.getElementById(loadingId).remove();
-                chatBox.innerHTML += `<div class="text-red-500 text-xs">Erreur de connexion.</div>`;
-            }
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        function ouvrirModalProposer() { document.getElementById('modal-proposer').classList.remove('hidden'); }
-        function fermerModalProposer() { document.getElementById('modal-proposer').classList.add('hidden'); }
-
-        async function envoyerProposition() {
-            const titre = document.getElementById('prop-titre').value;
-            const contenu = document.getElementById('prop-contenu').value;
-            const auteur = document.getElementById('prop-auteur').value;
-            if(!titre || !contenu) return alert("Veuillez remplir le titre et le contenu");
-
-            await fetch('/api/proposer', {
+        try {
+            const res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({titre, contenu, auteur})
+                body: JSON.stringify({
+                    message: msg,
+                    session_id: sessionId
+                })
             });
-            alert("Merci ! Votre proposition sera examinée par notre équipe.");
-            fermerModalProposer();
+            const data = await res.json();
+            document.getElementById(loadingId).remove();
+
+            chatBox.innerHTML += `
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-primaire text-white rounded-full flex items-center justify-center text-sm font-bold">A</div>
+                    <div class="bg-bulle-ia p-3 rounded-2xl rounded-tl-none max-w-md text-sm space-y-2">
+                        <div>${data.reponse}</div>
+                        ${data.source && data.source !== "Aucun document spécifique trouvé." ? `<div class="text-[10px] text-purple-600 bg-purple-100 p-1 rounded"><b>Source vérifiée :</b> ${data.source}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        } catch(e) {
+            document.getElementById(loadingId).remove();
+            chatBox.innerHTML += `<div class="text-red-500 text-xs">Erreur de connexion avec Anoushka.</div>`;
         }
-    </script>
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function ouvrirModalProposer() { document.getElementById('modal-proposer').classList.remove('hidden'); }
+    function fermerModalProposer() { document.getElementById('modal-proposer').classList.add('hidden'); }
+
+    async function envoyerProposition() {
+        const titre = document.getElementById('prop-titre').value;
+        const contenu = document.getElementById('prop-contenu').value;
+        const auteur = document.getElementById('prop-auteur').value;
+        if(!titre || !contenu) return alert("Veuillez remplir le titre et le contenu");
+
+        await fetch('/api/proposer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({titre, contenu, auteur})
+        });
+        alert("Merci ! Votre proposition sera examinée par notre équipe.");
+        fermerModalProposer();
+    }
+</script>
 </body>
 </html>
